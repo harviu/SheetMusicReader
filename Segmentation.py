@@ -20,7 +20,7 @@ class Segmenter:
         self.img = image_object
 
         # background subtraction
-        self.binary = img_to_binary(self.img,window_size=10,threshold=20)
+        self.binary = img_to_binary(self.img,window_size=10,threshold=30)
         Image.fromarray(self.binary).show()
         # plt.imshow(self.binary)
         # plt.show()
@@ -37,8 +37,93 @@ class Segmenter:
         #     json.dump(similitudeMoments(high),file)
         # with open("low.json","w") as file:
         #     json.dump(similitudeMoments(low),file)
-        
     def segment(self):
+        ww = self.width
+        hh = self.height
+        binary_line_detection = img_to_binary(self.img,window_size=10,threshold=20)
+        for h0 in self._find_line():
+            h = h0
+            values = []
+            hs = []
+            w = ww//2
+            direction = -1
+            window_w = 1
+            window_h = 100
+            line_patch = np.zeros((window_h,0))
+            k_line = np.zeros((ww))
+            # calculate k in window
+            for pw in range(0,ww,50):
+                epw = min(pw + 50, ww)
+                patch_line_detection = binary_line_detection[int(h)-25:int(h)+25,pw:epw]
+                lines = self._line_detect(patch_line_detection,theta_max_in_deg=5,pixel_ratio=0.8,min_k_distance=10,min_b_distance=6)
+                if len(lines) > 0:
+                    lines = np.array(lines)
+                    ks = lines[:,0]
+                    k = np.mean(ks)
+                    k_line[pw:epw] = k
+                else:
+                    k_line[pw:epw] = 0
+            # print(ww)
+            while True:
+                patch = self.binary[int(h)-window_h//2:int(h)+window_h//2,w-window_w:w]
+                if direction<0:
+                    values.insert(0,np.sum(patch))
+                    hs.insert(0,int(h))
+                    line_patch = np.concatenate((patch,line_patch),axis=1)
+                else:
+                    values.append(np.sum(patch))
+                    hs.append(int(h))
+                    line_patch = np.concatenate((line_patch,patch),axis=1)
+                w += direction #* window_w
+                if w-window_w < 0:
+                    direction = 1
+                    w = ww//2
+                    h= h0
+                if w >= ww:
+                    break
+                h += direction * k_line[w-window_w//2] #*window_w
+            yield line_patch
+            # print(np.mean(values))
+            # plt.plot(values)
+            # plt.show()
+            # plt.imshow(line_patch)
+            # plt.show()
+            # m = np.mean(values)
+            # TH = 15
+            # i = 0
+            # v = values[0]
+            # while True:
+            #     j = max(0,i-TH)
+            #     k = min(len(values),i+TH)
+            #     argmax = -1
+            #     for l in range(j,k,1):
+            #         if values[l] > values[argmax]:
+            #             argmax = l
+            #     for l in range(j,k,1):
+            #         if l != argmax:
+            #             values[l] = 0 
+            #     i = k+TH -1 
+            #     if i > len(values):
+            #         break
+            # values = values > m + 5
+            # plt.plot(values)
+            # plt.show()
+            # last = 0
+            # last_max = -1
+            # for (i,v) in enumerate(values):
+            #     if v:
+            #         if last_max == -1:
+            #             last_max = i
+            #         else:
+            #             node = self.binary[hs[i]-50:hs[i]+50,last:(last_max+i)//2]
+            #             last = (last_max+i)//2
+            #             last_max = i
+            #             plt.imshow(node)
+            #             plt.show()
+
+
+
+    def _find_line(self):
         hh = self.height
         ww = self.width
         window_w = 50
@@ -47,9 +132,10 @@ class Segmenter:
         w2 = w1 + window_w
         h1 = 0
         h2 = h1 + window_h
-        line_pos = []
+        binary = img_to_binary(self.img,window_size=10,threshold=20)
+        # line_pos = []
         while h2 <= hh:
-            patch = self.binary[h1:h2,w1:w2]
+            patch = binary[h1:h2,w1:w2]
             # detect lines <= 3 deg, take at least 60% of pixels, min line distance bewteen them is 6
             lines = self._line_detect(patch,theta_max_in_deg=5,pixel_ratio=0.8,min_k_distance=10,min_b_distance=6)
             if len(lines) == 5:
@@ -70,23 +156,23 @@ class Segmenter:
                     h1 += 1
                     h2 += 1
                     continue
-                # print(ks)
                 ### visualize the lines ###
-                height, width = patch.shape
-                test = np.copy(patch)
-                for k,b in lines:
-                    for x in range(width):
-                        y = int(k*x+b)
-                        if y >=0 and y<height:
-                            test[y,x] = True
-                plt.imshow(test)
-                plt.show()
+                # height, width = patch.shape
+                # test = np.copy(patch)
+                # for k,b in lines:
+                #     for x in range(width):
+                #         y = int(k*x+b)
+                #         if y >=0 and y<height:
+                #             test[y,x] = True
+                # plt.imshow(test)
+                # plt.show()
                 ######
 
                 middle_line_y = int(np.mean(bs))
                 sh1 = h1+middle_line_y-window_h//2
                 sh2 = h2+middle_line_y-window_h//2
-                line_pos.append((sh1+sh2)//2)
+                # line_pos.append((sh1+sh2)//2)
+                yield (sh1+sh2) // 2
                 h1+=window_h
                 h2+=window_h
             elif len(lines) == 0:
@@ -95,34 +181,7 @@ class Segmenter:
             else:
                 h1 += 1
                 h2 += 1
-        print(line_pos)
-
-        
-        # #template match
-        # matcher = TempMatcher(self.high_t)
-        # matcher.set_image(self.img)
-        # matcher.match(1.2)
-        # # Moment matching
-        # # moment window size
-        # high_h = 116
-        # high_w = 46
-        # low_w = 46
-        # low_h = 55
-        # # load moment window
-        # with open("high.json","r") as file:
-        #     high_m = np.array(json.load(file),np.float)
-        # with open("low.json","r") as file:
-        #     low_m = np.array(json.load(file),np.float)
-        # high_map = np.zeros((int((hh-high_h+1)/10)+3,int((ww-high_w+1)/10)+3))
-        # # match
-        # for h in range(0,hh,10):
-        #     for w in range(0,ww,10):
-        #         if h + high_h <= self.height and w+ high_w <= self.width:
-        #             patch = self.binary[h:h+high_h,w:w+high_w]
-        #             high_map[int(h/10),int(w/10)] = np.sqrt(np.sum((np.array(similitudeMoments(patch),np.float) - high_m)**2))
-        #     print(h/hh)
-        # plt.imshow(np.log(high_map/np.max(high_map)))
-        # plt.show()
+        # print(line_pos)
 
 
 
@@ -178,6 +237,8 @@ class Segmenter:
     
 
     
-segmenter = Segmenter("Resources/7.jpeg")
-# return the row index where there is sheet line
-segmenter.segment()
+segmenter = Segmenter("Resources/1.jpeg")
+# return patch contain a line
+for patch in segmenter.segment():
+    plt.imshow(patch)
+    plt.show()
