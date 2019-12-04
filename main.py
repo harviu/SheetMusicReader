@@ -21,6 +21,8 @@ if __name__ == "__main__":
     output_log = output_path + 'log.txt'
     os.makedirs(os.path.dirname(output_log), exist_ok = True)
 
+### segmentation ###
+
     segmenter = Segmenter("resources/samples/1.jpeg")
     # return patch contain a line
     staffs = []
@@ -30,10 +32,7 @@ if __name__ == "__main__":
 
     print("Segmentation Finished!")
 
-    #-------------------------------------------------------------------------------
-    # Symbol Segmentation, Object Recognition, and Semantic Reconstruction
-    #-------------------------------------------------------------------------------
-
+### Recognition ###
 
     staff_imgs_color = []
 
@@ -386,9 +385,7 @@ if __name__ == "__main__":
     midi.addTempo(track, time, 110)    # add a tempo to a track (in beats per min)
 
 
-    # -------------------------------------------------------------------------------
-    # Sequence MIDI
-    # -------------------------------------------------------------------------------
+    ### Sequence MIDI
 
     for i in range(len(staffs)):
         print("==== Staff {} ====".format(i+1))
