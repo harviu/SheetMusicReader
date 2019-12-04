@@ -2,7 +2,10 @@ from PIL import Image
 import numpy as np
 import math
 from matplotlib import pyplot as plt
+from scipy.ndimage import median_filter,gaussian_filter1d
 import json
+import cv2
+
 from utils import *
 
 
@@ -17,30 +20,25 @@ class Segmenter:
         self.height = height
         self.width = width
 
+        # image_object.show()
+        # image_object = cv2.fastNlMeansDenoising(np.array(image_object), None, 10, 7, 21)
+        # image_object = Image.fromarray(image_object)
+        # image_object.show()
+
         self.img = image_object
 
         # background subtraction
         self.binary = img_to_binary(self.img,window_size=10,threshold=30)
+        # self.binary = median_filter(self.binary,(3,3))
         Image.fromarray(self.binary).show()
         # plt.imshow(self.binary)
         # plt.show()
 
-        ## high and low template
-        # temp_img = Image.open("Resources/The-Summit.jpg")
-        # temp_bin = img_to_binary(temp_img)
-        # self.high_t = temp_bin[291:371,103:135]
-        # self.low_t = temp_bin[680:718,103:135]
-        
-        ## high and low moments
-        # Image.fromarray(self.binary).show()
-        # with open("high.json","w") as file:
-        #     json.dump(similitudeMoments(high),file)
-        # with open("low.json","w") as file:
-        #     json.dump(similitudeMoments(low),file)
     def segment(self):
         ww = self.width
         hh = self.height
         binary_line_detection = img_to_binary(self.img,window_size=10,threshold=20)
+        # Image.fromarray(binary_line_detection).show()
         for h0 in self._find_line():
             h = h0
             values = []
@@ -51,18 +49,26 @@ class Segmenter:
             window_h = 100
             line_patch = np.zeros((window_h,0))
             k_line = np.zeros((ww))
+            space = []
             # calculate k in window
-            for pw in range(0,ww,50):
-                epw = min(pw + 50, ww)
-                patch_line_detection = binary_line_detection[int(h)-25:int(h)+25,pw:epw]
+            for pw in range(0,ww,10):
+                spw = max(0,pw-25)
+                epw = min(pw + 25, ww)
+                patch_line_detection = binary_line_detection[int(h)-30:int(h)+30,spw:epw]
                 lines = self._line_detect(patch_line_detection,theta_max_in_deg=5,pixel_ratio=0.8,min_k_distance=10,min_b_distance=6)
-                if len(lines) > 0:
+                if len(lines) == 5:
                     lines = np.array(lines)
                     ks = lines[:,0]
-                    k = np.mean(ks)
-                    k_line[pw:epw] = k
+                    bs = lines[:,1]
+                    space.append( (max(bs) - min(bs))/4)
+                    k = np.mean(bs)
+                    k_line[spw:epw] = k
                 else:
-                    k_line[pw:epw] = 0
+                    k_line[spw:epw] = 30 if spw == 0 else k_line[spw-1]
+            k_line = gaussian_filter1d(k_line,sigma = 3)
+            space = sum(space)/len(space)
+            # print(space)
+            
             # print(ww)
             while True:
                 patch = self.binary[int(h)-window_h//2:int(h)+window_h//2,w-window_w:w]
@@ -81,45 +87,27 @@ class Segmenter:
                     h= h0
                 if w >= ww:
                     break
-                h += direction * k_line[w-window_w//2] #*window_w
-            yield line_patch
-            # print(np.mean(values))
-            # plt.plot(values)
+                # h += direction * k_line[w-window_w//2] #*window_w
+                h = h0 + (k_line[w] - 30)
+
+            horizontal = np.sum(line_patch,0)
+            line_patch = line_patch[:,horizontal>3]
+
+            # plt.plot(line_patch)
             # plt.show()
-            # plt.imshow(line_patch)
-            # plt.show()
-            # m = np.mean(values)
-            # TH = 15
-            # i = 0
-            # v = values[0]
-            # while True:
-            #     j = max(0,i-TH)
-            #     k = min(len(values),i+TH)
-            #     argmax = -1
-            #     for l in range(j,k,1):
-            #         if values[l] > values[argmax]:
-            #             argmax = l
-            #     for l in range(j,k,1):
-            #         if l != argmax:
-            #             values[l] = 0 
-            #     i = k+TH -1 
-            #     if i > len(values):
-            #         break
-            # values = values > m + 5
-            # plt.plot(values)
-            # plt.show()
-            # last = 0
-            # last_max = -1
-            # for (i,v) in enumerate(values):
-            #     if v:
-            #         if last_max == -1:
-            #             last_max = i
-            #         else:
-            #             node = self.binary[hs[i]-50:hs[i]+50,last:(last_max+i)//2]
-            #             last = (last_max+i)//2
-            #             last_max = i
-            #             plt.imshow(node)
-            #             plt.show()
+
+            line_matrix = [
+                (50+int(space*2),50+int(space*2)+1),
+                (50+int(space),50+int(space)+1),
+                (50,50+1),
+                (50-int(space),50-int(space)+1),
+                (50-int(space*2),50-int(space*2)+1),
+            ]
+            line_patch = ((1-line_patch) * 255 ).astype(np.uint8)
+            staff = Staff(line_matrix,space,line_patch)
+            # Image.fromarray(line_patch).show()
+
+            yield staff
 
 
 
@@ -169,9 +157,11 @@ class Segmenter:
                 ######
 
                 middle_line_y = int(np.mean(bs))
+                # spacing = (max(bs) - min(bs))/4
                 sh1 = h1+middle_line_y-window_h//2
                 sh2 = h2+middle_line_y-window_h//2
                 # line_pos.append((sh1+sh2)//2)
+                # print(bs,spacing)
                 yield (sh1+sh2) // 2
                 h1+=window_h
                 h2+=window_h
@@ -236,9 +226,3 @@ class Segmenter:
         return lines
     
 
-    
-segmenter = Segmenter("Resources/1.jpeg")
-# return patch contain a line
-for patch in segmenter.segment():
-    plt.imshow(patch)
-    plt.show()
